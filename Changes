@@ -1,0 +1,9 @@
+Revision history for Perl extension Net::UPCDatabase.
+
+0.01  Thu Dec 29 2005
+	- Original version.
+0.02  Thu Dec 29 2005
+	- Created documentation.
+0.03  Fri Dec 30 19:40:43 2005
+	- Created installation tests.
+	- Initial packaging for CPAN.
