@@ -1,3 +1,4 @@
+use strict;
 use Test::More tests => 5;
 
 BEGIN { use_ok('Net::UPCDatabase'); }
@@ -12,15 +13,15 @@ SKIP: {
   isa_ok($upcdb, 'Net::UPCDatabase');
 
   my $goodUpc = '035000764119';
-  my $item = $upcdb->lookup($goodUpc);
-  ok(!$item->{error}, 'lookup (test good upc) '.$item->{error});
+  my $item1 = $upcdb->lookup($goodUpc);
+  ok(!$item1->{error}, 'lookup (test good upc) '.$item1->{error});
 
   my $badUpc1 = '035000764118';
-  my $item = $upcdb->lookup($badUpc1);
-  ok($item->{error}, 'lookup (test bad checksum) '.$item->{error});
+  my $item2 = $upcdb->lookup($badUpc1);
+  ok($item2->{error}, 'lookup (test bad checksum) '.$item2->{error});
 
   my $badUpc2 = '03500076411';
-  my $item = $upcdb->lookup($badUpc2);
-  ok($item->{error}, 'lookup (test bad length) '.$item->{error});
+  my $item3 = $upcdb->lookup($badUpc2);
+  ok($item3->{error}, 'lookup (test bad length) '.$item3->{error});
 
 }

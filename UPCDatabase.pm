@@ -2,7 +2,7 @@ package Net::UPCDatabase;
 
 use 5.008;
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 our $DEFAULTURL = 'http://www.upcdatabase.com/rpc';
 
@@ -83,8 +83,8 @@ On error, it returns the given error reason as C<< $itemInfo->{error} >>.
 
 =head1 REQUIRES
 
-C<RPC::XML>
-C<RPC::XML::Client>
+=item L<RPC::XML>
+=item L<RPC::XML::Client>
 
 =head1 TODO
 
