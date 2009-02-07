@@ -13,3 +13,6 @@ Revision history for Perl extension Net::UPCDatabase.
 	- Added full internal calculateCheckDigit() function to override unimplemented UPCDatabase.com-side function.
 	- lookup() will automatically use calculateCheckDigit() if a digit placeholder is in the UPC string.
 	- Modified documentation to suit new functionality.
+0.06  Sat Feb  7 13:48:00 CST 2009
+	- Updated to use EAN, not UPCA (UPCDatabase.com deprecated UPCA)
+	- Fixed dependency declaration.
