@@ -1,10 +1,9 @@
 package Net::UPCDatabase;
 
 use 5.008;
-use RPC::XML;
-use RPC::XML::Client;
+use Frontier::Client;
 
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
 our $DEFAULTURL = 'http://www.upcdatabase.com/rpc';
 
@@ -75,8 +74,10 @@ sub new {
   my $class = shift;
   my $self = bless({}, $class);
   my %arg = @_;
+  $self->{_debug} = $arg{debug} || 0;
   $self->{_url} = $arg{url} || $DEFAULTURL;
-  $self->{_rpcClient} = RPC::XML::Client->new($self->{_url});
+  $self->{_coder} = Frontier::RPC2->new;
+  $self->{_server} = Frontier::Client->new('url' => $self->{_url}, debug => $self->{_debug});
   return $self;
 }
 
@@ -84,7 +85,15 @@ sub new {
 
   $itemInfo = $upcObject->lookup($upc);
 
-Accepts a B<REQUIRED> argument, the UPC to lookup.  The UPC can be either UPC-A or UPC-E.
+  # example usage
+  my $ean = '0012000000133'; # pepsi 12oz can
+  print "EAN: $ean\n";
+  my $item = $upcdb->lookup($ean);
+  die "LOOKUP-ERROR: $item->{error}\n" if $item->{error};
+  print Dumper($item);
+
+Accepts a B<REQUIRED> argument, the UPC to lookup.
+The UPC can be UPC-E (8 digits), UPC-A (12 digits), or EAN (13 digits).
 
 Returns the data about the given UPC in a hash reference.
 
@@ -92,39 +101,48 @@ On error, it returns the given error reason as C<< $itemInfo->{error} >>.
 
 =cut
 
-sub lookup {
+sub lookup
+{
   my $self = shift;
   my $upc = uc(shift);
   my $response = {};
   $upc =~ s|X|C|g;
   $upc =~ s|[^0-9C]||g;
-  if ($upc =~ m|^\d{8}$|) {
+  if ($upc =~ m|^\d{8}$|)
+  {
     my $upcA = $self->convertUpcE($upc);
-    if ($upcA->{error}) {
+    if ($upcA->{error})
+    {
       $response = $upcA;
     }
-    else {
+    else
+    {
       $upc = $upcA->{upc};
     }
   }
-  if (!$response->{error} && $upc =~ m|C|) {
+  if (!$response->{error} && $upc =~ m|C|)
+  {
     my $upcC = $self->calculateCheckDigit($upc);
-    if ($upcC->{error}) {
+    if ($upcC->{error})
+    {
       $response = $upcC;
     }
-    else {
+    else
+    {
       $upc = $upcC->{upc};
     }
   }
   $upc = substr(('0' x 13).$upc, -13, 13); # if it ain't a 13-digit EAN, make it one.
-  if (!$response->{error}) {
-    my $data = $self->{_rpcClient}->send_request('lookupEAN', $upc)->value;
-    if (ref($data) eq "HASH") {
+  if (!$response->{error})
+  {
+    my $data = $self->{_server}->call('lookupEAN', $self->{_coder}->string($upc));
+    if (ref($data) eq "HASH")
+    {
       $response = $data;
     }
-    else {
+    else
+    {
       $response->{upc} = $upc;
-      $response->{upclength} = length($upc);
       $response->{error} = $data;
     }
   }
@@ -134,7 +152,18 @@ sub lookup {
 =head2 convertUpcE
 
   $ean = $upcObject->convertUpcE($upcE);
-  $isError = $ean !~ m|^\d{13}$|;
+  die "ERROR: $ean->{error}\n" if $ean->{error};
+  print "EAN: $ean->{ean}\n";
+
+  # example usage
+  my $upce = '01201701'; # pepsi 24 pack
+  print "UPCE: $upce\n";
+  $ean = $upcdb->convertUpcE($upce);
+  die "EAN-ERROR: $ean->{error}\n" if $ean->{error};
+  print "EAN: $ean->{ean}\n";
+  $item = $upcdb->lookup($ean->{ean});
+  die "LOOKUP-ERROR: $item->{error}\n" if $item->{error};
+  print Dumper($item);
 
 Accepts a B<REQUIRED> argument, the UPC-E to convert.
 
@@ -144,16 +173,19 @@ On error, it returns the given error reason as C<< $itemInfo->{error} >>.
 
 =cut
 
-sub convertUpcE {
+sub convertUpcE
+{
   my $self = shift;
   my $upc = shift;
-  my $data = $self->{_rpcClient}->send_request('convertUPCE', $upc)->value;
+  my $data = $self->{_server}->call('convertUPCE', $self->{_coder}->string($upc));
   my $response = {};
   $response->{upcE} = $upc;
-  if ($data =~ m|^\d{13}$|) {
-    $response->{upc} = $data;
+  if ($data =~ m|^\d{13}$|)
+  {
+    $response->{ean} = $data;
   }
-  else {
+  else
+  {
     $response->{error} = $data;
   }
   return $response;
@@ -161,24 +193,32 @@ sub convertUpcE {
 
 =head2 calculateCheckDigit
 
-  $upcA = '01200000C2X1';  # bad (more than one digit being calculated)
-  $upcA = '01200000C29C';  # bad (more than one digit being calculated)
-  $upcA = '01200000129C';  # good (only one digit)
-  $upcA = '0120000012C1';  # good (only one digit)
-  $upcA = $upcObject->calculateCheckDigit($upcA);
-  $isError = $upcA !~ m|^\d{12}$|;
+  $ean = '001200000C2X1';  # bad (more than one digit being calculated)
+  $ean = '001200000C29C';  # bad (more than one digit being calculated)
+  $ean = '001200000129C';  # good (only one digit)
+  $ean = '00120000012C1';  # good (only one digit)
+  $ean = $upcObject->calculateCheckDigit($ean);
+  die "ERROR: $ean->{error}\n" if $ean->{error};
+  print "EAN: $ean->{ean}\n";
 
-Accepts a B<REQUIRED> argument, the UPC-A with checkdigit placeholder (C or X) to calculate.  This function will calculate the missing digit for any position, not just the last position.  This only works if only one digit being calculated.  This doesn't work with UPC-E.  There is no difference between using "X" or "C" as the placeholder.
+Accepts a B<REQUIRED> argument, the UPC-A or EAN with checkdigit placeholder (C or X) to calculate.
+This function will calculate the missing digit for any position, not just the last position.
+This only works if only one digit being calculated.
+This doesn't work with UPC-E.
+There is no difference between using "X" or "C" as the placeholder.
 
-Returns the UPC-A with the checkdigit properly calculated.
+Returns the EAN with the checkdigit properly calculated.
 
 On error, it returns the given error reason as C<< $itemInfo->{error} >>.
 
-NOTE:  This uses an internal function, not the function on UPCDatabase.com because it appears that it is currently not implemented on the UPCDatabase.com side of things.  If it is implemented on UPCDatabase.com, it is a simple change to use it instead.
+NOTE:  This uses an internal function, not the function on UPCDatabase.com because it appears that it is currently not
+implemented on the UPCDatabase.com side of things.
+If it is implemented to the same extent on UPCDatabase.com, it is a simple change to use it instead.
 
 =cut
 
-sub calculateCheckDigit {
+sub calculateCheckDigit
+{
   my $self = shift;
   my $upc = uc(shift);
   return $self->_calculateCheckDigit($upc); ## ???: If UPCDatabase.com supports this function (no longer "Unimplemented"), maybe remove this line?
@@ -186,12 +226,15 @@ sub calculateCheckDigit {
   #my $data = $self->{_rpcClient}->send_request('calculateCheckDigit', $upc)->value;
   #my $response = {};
   #$response->{upcC} = $upc;
-  #if ($data =~ m|^\d{12}$|) {
+  #if ($data =~ m|^\d{12}$|)
+  #{
   #  $response->{upc} = $data;
   #}
-  #else {
+  #else
+  #{
   #  $response->{error} = $data;
-  #  if ($response->{error} eq "Unimplemented") {
+  #  if ($response->{error} eq "Unimplemented")
+  #  {
   #    return $self->_calculateCheckDigit($upc);
   #  }
   #}
@@ -205,13 +248,16 @@ You won't want to use this yourself.
 
 =cut
 
-sub _calculateCheckDigit {
+sub _calculateCheckDigit
+{
   my $self = shift;
   my $upc = uc(shift);
+  $upc = substr(('0' x 13).$upc, -13, 13); # if it ain't a 13-digit EAN, make it one.
   $upc =~ s|X|C|g;
   my $response = {};
-  $response->{upcC} = $upc;
-  if ($upc =~ m|^([C\d]{11})([C\d])$| && $upc !~ m|C.*?C|) {
+  $response->{eanC} = $upc;
+  if ($upc =~ m|^([C\d]{12})([C\d])$| && $upc !~ m|C.*?C|)
+  {
     my $code = $1;
     my $check = $2;
     my @odd = ();
@@ -221,53 +267,66 @@ sub _calculateCheckDigit {
     my $oddMissing = 0;
     my $evenTotal = 0;
     my $evenMissing = 0;
-    foreach my $digit (split(//, $code)) {
-      if ($i++ % 2) {
-        if ($digit eq "C") {
-          $evenMissing++;
-        }
-        else {
-          $evenTotal += $digit;
-        }
-      }
-      else {
-        if ($digit eq "C") {
+    foreach my $digit (split(//, $code))
+    {
+      if ($i++ % 2)
+      {
+        if ($digit eq "C")
+        {
           $oddMissing++;
         }
-        else {
+        else
+        {
           $oddTotal += $digit * 3;
         }
       }
+      else
+      {
+        if ($digit eq "C")
+        {
+          $evenMissing++;
+        }
+        else
+        {
+          $evenTotal += $digit;
+        }
+      }
     }
-    if ($check eq "C") {
+    if ($check eq "C")
+    {
       my $theTotal = $evenTotal + $oddTotal;
       $theTotal -= int($theTotal / 10) * 10;
       $theTotal ||= 10;
       $check = 10 - $theTotal;
     }
-    elsif ($oddMissing) {  # ???: Is there a better way to do this than a wasteful brute force method?
+    elsif ($oddMissing)  # ???: Is there a better way to do this than a wasteful brute force method?
+    {
       my $isDigit = 0;
-      foreach $digit (0 .. 9) {
+      foreach $digit (0 .. 9)
+      {
         my $theTotal = $evenTotal + $oddTotal + ($digit * 3);
         $theTotal -= int($theTotal / 10) * 10;
         $theTotal ||= 10;
         my $tCheck = 10 - $theTotal;
-        if ($check == $tCheck) {
+        if ($check == $tCheck)
+        {
           $isDigit = $digit;
         }
       }
       $code =~ s|C|$isDigit|;
     }
-    elsif ($evenMissing) {
+    elsif ($evenMissing)
+    {
       my $theTotal = $evenTotal + $oddTotal + $check;
       $theTotal -= int($theTotal / 10) * 10;
       $theTotal ||= 10;
       my $diff = 10 - $theTotal;
       $code =~ s|C|$diff|;
     }
-    $response->{upc} = $code.$check;
+    $response->{ean} = $code.$check;
   }
-  else {
+  else
+  {
     $response->{error} = 'Unimplemented';
   }
   return $response;
@@ -275,8 +334,8 @@ sub _calculateCheckDigit {
 
 =head1 DEPENDENCIES
 
-L<RPC::XML>
-L<RPC::XML::Client>
+L<Frontier::Client>
+L<Frontier::RPC2>
 
 =head1 TODO
 
@@ -284,7 +343,11 @@ L<RPC::XML::Client>
 
 =item UPC checksum checking/creation
 
-Clean up calculation of odd-position checkdigit calculation.  It currently uses an inefficient brute-force method of calculation for that position.  Even-position and checksum position calculation is pretty efficient.  OEOEOEOEOEOX (O=odd, E=even, X=checksum)  It's not *really* that wasteful, just not as efficient as it could be.
+Clean up calculation of odd-position checkdigit calculation.
+It currently uses an inefficient brute-force method of calculation for that position.
+Even-position and checksum position calculation is pretty efficient.
+OEOEOEOEOEOX (O=odd, E=even, X=checksum)
+It's not *really* that wasteful, just not as efficient as it could be.
 
 =back
 

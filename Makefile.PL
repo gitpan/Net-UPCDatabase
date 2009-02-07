@@ -3,7 +3,7 @@ use ExtUtils::MakeMaker;
 WriteMakefile(
     'NAME'		=> 'Net::UPCDatabase',
     'VERSION_FROM'	=> 'UPCDatabase.pm',
-    'PREREQ_PM'		=> { RPC::XML => 0, RPC::XML::Client => 0 },
+    'PREREQ_PM'		=> { Frontier::Client => 0, Frontier::RPC2 => 0 },
     ($] >= 5.005 ? ('AUTHOR' => 'Dusty Wilson <cpan-Net-UPCDatabase@dusty.hey.nu>') : ()),
     'LIBS'		=> [''],
     'DEFINE'		=> '',
